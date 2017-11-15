@@ -1,0 +1,56 @@
+---
+# tasks file for osp-rbac
+
+  - name: get the osp auth
+    os_auth:
+      region_name: "{{ region }}"
+      cert: "{{ user_cert }}"
+      key: "{{ user_key }}"
+      cacert: "{{ user_cacert }}"
+      endpoint_type: "{{ user_endpoint }}"
+    register: user_auth
+
+
+- name: create a domain
+    os_keystone_domain:
+      name: "{{ domain_name }}"
+      enabled: "{{ domain_status }}"
+      state: "{{ domain_state }}"
+      region_name: "{{ domain_region }}"
+      key: "{{ user_key }}"
+      cert: "{{ user_key }}"
+      cacert: "{{ user_cacert }}"
+ 
+  - name: create a project
+    os_project:
+      name: "{{ project }}"
+      state: "{{ project_state }}"
+      enabled: "{{ project_status }}"
+      cert: "{{ user_cert }}"
+      key: "{{ user_key }}"
+      cacert: "{{ user_cacert }}"
+      description: "{{ project_desc }}"
+
+  - name: create users
+    os_user:
+      name: "{{ user }}"
+      state: "{{ user_status }}"
+      email: "{{ user_email }}"
+      password: "{{ user_passwd }}"
+      domain: "{{ user_domain }}"
+      default: "{{ user_project }}"
+      endpoint_type: "{{ user_endpoint }}"
+      key: " {{ user_key }}"
+      cacert: "{{ user_cacert }}"
+
+      #  - name: create group
+      #os_user_group:
+      #user: "{{ os_user }}"
+      #group: "{{ os_group }}"
+      #region_name: "{{ region }}"
+      #state: "{{ group_state }}"
+      #cert: "{{ user_cert }}"
+      #cacert: "{{ user_cacert }}"
+      #key: "{{ user_key }}"
+
+
