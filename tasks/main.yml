@@ -1,0 +1,82 @@
+---
+# tasks file for osp-rbac
+
+# Keystone v2 does not support the creation of groups and domains.
+- name: Tasks performed only when keystone_version is '2'
+  block:
+    - name: Validate OpenStack project(s) (v2 only)
+      os_project:
+        endpoint_type: "{{ osp_rbac.api.endpoint_type }}"
+        auth: "{{ osp_rbac.api.auth }}"
+        name: "{{ item.1.name }}"
+        description: "{{ item.1.description }}"
+      with_subelements:
+        - "{{ osp_rbac.domains }}"
+        - projects
+  when: osp_rbac.api.keystone_version == '2'
+
+# Keystone v3 supports the creation of domains and groups.
+# It also supports the association of projects and groups with domains.
+#
+- name: Tasks performed only when keystone_version is '3'
+  block:
+    - name: Validate OpenStack domain(s) (v3 only)
+      os_keystone_domain:
+        endpoint_type: "{{ osp_rbac.api.endpoint_type }}"
+        auth: "{{ osp_rbac.api.auth }}"
+        name: "{{ item.name }}"
+        description: "{{ item.description }}"
+      with_items:
+        - "{{ osp_rbac.domains }}"
+    - name: Validate domain project(s) (v3 only)
+      os_project:
+        endpoint_type: "{{ osp_rbac.api.endpoint_type }}"
+        auth: "{{ osp_rbac.api.auth }}"
+        name: "{{ item.1.name }}"
+        domain: "{{ item.0.name }}"
+        description: "{{ item.1.description }}"
+      with_subelements:
+        - "{{ osp_rbac.domains }}"
+        - projects
+    - name: Validate domain group(s) (v3 only)
+      os_group:
+        endpoint_type: "{{ osp_rbac.api.endpoint_type }}"
+        auth: "{{ osp_rbac.api.auth }}"
+        name: "{{ item.1.name }}"
+        description: "{{ item.1.description }}"
+        domain_id: "{{ item.0.name }}"
+      with_subelements:
+        - "{{ osp_rbac.domains }}"
+        - groups
+  when: osp_rbac.api.keystone_version == '3'
+
+- name: Validate OpenStack role(s) (v2 and v3)
+  os_keystone_role:
+    endpoint_type: "{{ osp_rbac.api.endpoint_type }}"
+    auth: "{{ osp_rbac.api.auth }}"
+    name: "{{ item }}"
+  with_items:
+    - "{{ osp_rbac.roles }}"
+- name: Validate admin for each project (v2 and v3)
+  os_user:
+    endpoint_type: "{{ osp_rbac.api.endpoint_type }}"
+    auth: "{{ osp_rbac.api.auth }}"
+    name: "{{ item.1.admin.name }}"
+    update_password: "{{ item.1.admin.update_password }}"
+    password: "{{ item.1.admin.password }}"
+    email: "{{ item.1.admin.email }}"
+    default_project: "{{ item.1.name }}"
+  with_subelements:
+    - "{{ osp_rbac.domains }}"
+    - projects
+- name: Validate association of project admin user(s) with admin role (v2 and v3)
+  os_user_role:
+    endpoint_type: "{{ osp_rbac.api.endpoint_type }}"
+    auth: "{{ osp_rbac.api.auth }}"
+    user: "{{ item.1.admin.name }}"
+    project: "{{ item.1.name }}"
+    role: admin
+  with_subelements:
+    - "{{ osp_rbac.domains }}"
+    - projects
+...
