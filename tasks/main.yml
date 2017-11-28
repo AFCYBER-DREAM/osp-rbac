@@ -1,82 +1,196 @@
 ---
-# tasks file for osp-rbac
+# tasks file for osp_admin
+
+# Checking OSP-related Bash environment variables
+- name: Ensuring authentication settings are correct
+  block:
+  - name: Getting current OSP-related Bash env vars (except ${OS_PASSWORD})
+    shell: "env | grep OS_ | egrep -v OS_PASSWORD"
+    register: osp_admin_vars
+    changed_when: false
+  - name: Printing current OSP-related Bash env vars (for debugging, if required)
+    debug:
+      var: osp_admin_vars.stdout_lines
+    changed_when: false
+  - name: Pausing so you can review these env variables to ensure you want to continue
+    pause:
+      seconds: 1
+    changed_when: false
+  - name: Ensuring authentication can occur with current OSP-related Bash env vars
+    os_auth:
+      auth_type: password
+    changed_when: false
+  - name: Determining tasks to run based on value of ${OS_IDENTITY_API_VERSION} Bash env var
+    set_fact:
+      keystone_api_version: "{{ lookup('env', 'OS_IDENTITY_API_VERSION') }}"
+    changed_when: false
 
 # Keystone v2 does not support the creation of groups and domains.
 - name: Tasks performed only when keystone_version is '2'
   block:
     - name: Validate OpenStack project(s) (v2 only)
       os_project:
-        endpoint_type: "{{ osp_rbac.api.endpoint_type }}"
-        auth: "{{ osp_rbac.api.auth }}"
+        endpoint_type: admin
         name: "{{ item.1.name }}"
         description: "{{ item.1.description }}"
       with_subelements:
-        - "{{ osp_rbac.domains }}"
+        - "{{ osp_admin.domains }}"
         - projects
-  when: osp_rbac.api.keystone_version == '2'
+    - name: Validating admin for each project (v2 only)
+      os_user:
+        endpoint_type: admin
+        name: "{{ item.1.admin.name }}"
+        update_password: "{{ item.1.admin.update_password }}"
+        password: "{{ item.1.admin.password }}"
+        email: "{{ item.1.admin.email }}"
+        default_project: "{{ item.1.admin.default_project|default(omit) }}"
+      with_subelements:
+        - "{{ osp_admin.domains }}"
+        - projects
+  when: keystone_api_version == '2'
 
 # Keystone v3 supports the creation of domains and groups.
 # It also supports the association of projects and groups with domains.
-#
 - name: Tasks performed only when keystone_version is '3'
   block:
-    - name: Validate OpenStack domain(s) (v3 only)
+    - name: Validating OpenStack domain(s) (v3 only)
       os_keystone_domain:
-        endpoint_type: "{{ osp_rbac.api.endpoint_type }}"
-        auth: "{{ osp_rbac.api.auth }}"
+        endpoint_type: admin
         name: "{{ item.name }}"
         description: "{{ item.description }}"
       with_items:
-        - "{{ osp_rbac.domains }}"
-    - name: Validate domain project(s) (v3 only)
+        - "{{ osp_admin.domains }}"
+    - name: Validating domain project(s) (v3 only)
       os_project:
-        endpoint_type: "{{ osp_rbac.api.endpoint_type }}"
-        auth: "{{ osp_rbac.api.auth }}"
+        endpoint_type: admin
         name: "{{ item.1.name }}"
         domain: "{{ item.0.name }}"
         description: "{{ item.1.description }}"
       with_subelements:
-        - "{{ osp_rbac.domains }}"
+        - "{{ osp_admin.domains }}"
         - projects
-    - name: Validate domain group(s) (v3 only)
+    - name: Validating domain group(s) (v3 only)
       os_group:
-        endpoint_type: "{{ osp_rbac.api.endpoint_type }}"
-        auth: "{{ osp_rbac.api.auth }}"
+        endpoint_type: admin
         name: "{{ item.1.name }}"
         description: "{{ item.1.description }}"
         domain_id: "{{ item.0.name }}"
       with_subelements:
-        - "{{ osp_rbac.domains }}"
+        - "{{ osp_admin.domains }}"
         - groups
-  when: osp_rbac.api.keystone_version == '3'
+    - name: Validating domain-admins group for each domain (v3 only)
+      os_group:
+        endpoint_type: admin
+        name: "{{ item.name }}-domain-admins"
+        description: "Admins for {{ item.name }} domain"
+        domain_id: "{{ item.name }}"
+      with_items:
+        - "{{ osp_admin.domains }}"
+    - name: Validating admin user for each project (v3 only)
+      os_user:
+        endpoint_type: admin
+        name: "{{ item.1.admin.name }}"
+        update_password: "{{ item.1.admin.update_password }}"
+        password: "{{ item.1.admin.password }}"
+        email: "{{ item.1.admin.email }}"
+        default_project: "{{ item.1.admin.default_project|default(omit) }}"
+        domain: "{{ item.0.name }}"
+      with_subelements:
+        - "{{ osp_admin.domains }}"
+        - projects
+  when: keystone_api_version == '3'
 
-- name: Validate OpenStack role(s) (v2 and v3)
+# Tasks common to both Identity API v2 and v3
+- name: Validating OpenStack role(s) (v2 and v3)
   os_keystone_role:
-    endpoint_type: "{{ osp_rbac.api.endpoint_type }}"
-    auth: "{{ osp_rbac.api.auth }}"
+    endpoint_type: admin
     name: "{{ item }}"
   with_items:
-    - "{{ osp_rbac.roles }}"
-- name: Validate admin for each project (v2 and v3)
-  os_user:
-    endpoint_type: "{{ osp_rbac.api.endpoint_type }}"
-    auth: "{{ osp_rbac.api.auth }}"
-    name: "{{ item.1.admin.name }}"
-    update_password: "{{ item.1.admin.update_password }}"
-    password: "{{ item.1.admin.password }}"
-    email: "{{ item.1.admin.email }}"
-    default_project: "{{ item.1.name }}"
-  with_subelements:
-    - "{{ osp_rbac.domains }}"
-    - projects
-- name: Validate association of project admin user(s) with admin role (v2 and v3)
+    - "{{ osp_admin.roles }}"
+- name: Validating association of project admin user(s) with admin role (v2 and v3)
   os_user_role:
-    endpoint_type: "{{ osp_rbac.api.endpoint_type }}"
-    auth: "{{ osp_rbac.api.auth }}"
+    endpoint_type: admin
     user: "{{ item.1.admin.name }}"
     project: "{{ item.1.name }}"
     role: admin
   with_subelements:
-    - "{{ osp_rbac.domains }}"
+    - "{{ osp_admin.domains }}"
+    - projects
+- name: Validating that openstack-admin group is a project member for all projects (v2 and v3)
+  os_user_role:
+    endpoint_type: admin
+    user: "{{ item.1.admin.name }}"
+    project: "{{ item.1.name }}"
+    role: admin
+  with_subelements:
+    - "{{ osp_admin.domains }}"
+    - projects
+- name: Validating global-public-network (v2 and v3)
+  os_network:
+    endpoint_type: public
+    project: admin
+    external: true
+    shared: true
+    name: "global-public-network"
+- name: Validating global-public-subnet (v2 and v3)
+  os_subnet:
+    endpoint_type: public
+    project: admin
+    name: "global-public-subnet"
+    network_name: "global-public-network"
+    cidr: "{{ osp_admin.global_public_network.cidr }}"
+- name: Ensuring existence of each projects' primary, private network (v2 and v3)
+  os_network:
+    endpoint_type: public
+    project: "{{ item.1.name }}"
+    name: "{{ item.1.name }}-private-network"
+  with_subelements:
+    - "{{ osp_admin.domains }}"
+    - projects
+- name: Ensuring existence of each projects' primary, private network's subnet (v2 and v3)
+  os_subnet:
+    endpoint_type: public
+    project: "{{ item.1.name }}"
+    name: "{{ item.1.name }}-private-subnet"
+    network_name: "{{ item.1.name }}-private-network"
+    cidr: "{{ item.1.private_network.cidr }}"
+    enable_dhcp: true
+  with_subelements:
+    - "{{ osp_admin.domains }}"
+    - projects
+- name: Validating global-public-router settings (v2 and v3)
+  os_router:
+    endpoint_type: public
+    project: admin
+    name: "global-public-router"
+    network: global-public-network
+- name: Validating each projects' primary, private subnet's router's settings (v2 and v3)
+  os_router:
+    endpoint_type: public
+    project: "{{ item.1.name }}"
+    name: "{{ item.1.name }}-private-router"
+    network: global-public-network
+    external_fixed_ips:
+      - subnet: global-public-subnet
+    interfaces:
+      - "{{ item.1.name }}-private-subnet"
+  with_subelements:
+    - "{{ osp_admin.domains }}"
+    - projects
+- name: Ensuring each project has its designated minimum amount of floating IPs
+  shell: "openstack floating ip list -f value --project {{ item.1.name }} | wc -l | while read count; do until [ $count -ge {{ item.1.public_network.minimum_fips }} ]; do openstack floating ip create --project {{ item.1.name }} global-public-network; let count+=1; touch '.osp_admin.ansible_changed_{{ item.1.name }}'; done; done"
+  args:
+    executable: /bin/bash
+    chdir: "{{ lookup('env', 'HOME') }}"
+  with_subelements:
+    - "{{ osp_admin.domains }}"
+    - projects
+  changed_when: false
+- name: Checking to see if new Floating IP (FIP) creation was attempted for each project
+  file:
+    path: "$HOME/.osp_admin.ansible_changed_{{ item.1.name }}"
+    state: absent
+  with_subelements:
+    - "{{ osp_admin.domains }}"
     - projects
 ...
