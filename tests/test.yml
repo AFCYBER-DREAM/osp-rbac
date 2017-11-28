@@ -1,9 +1,6 @@
 ---
-- hosts: test
-  become: true
-  become_method: sudo
-  become_user: root
+- hosts: localhost
   gather_facts: false
 
   roles:
-    - osp-rbac
+    - osp-admin
